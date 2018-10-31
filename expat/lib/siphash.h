@@ -11,6 +11,10 @@
  * --------------------------------------------------------------------------
  * HISTORY:
  *
+ * 2018-10-31  (Sebastian Pipping)
+ *   - Add some support for systems where fixed-size integer types come
+ *     from <inttypes.h> rather than <stdint.h>
+ *
  * 2018-07-08  (Anton Maklakov)
  *   - Add "fall through" markers for GCC's -Wimplicit-fallthrough
  *
@@ -99,7 +103,11 @@
   typedef unsigned __int32 uint32_t;
   typedef unsigned __int64 uint64_t;
 #else
- #include <stdint.h> /* uint64_t uint32_t uint8_t */
+# if ! defined(HAVE_STDINT_H) && defined(HAVE_INTTYPES_H)
+#  include <inttypes.h> /* uint64_t uint32_t uint8_t */
+# else
+#  include <stdint.h> /* uint64_t uint32_t uint8_t (C99) */
+# endif
 #endif
 
 
