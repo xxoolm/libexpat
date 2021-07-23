@@ -6,7 +6,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021 Expat development team
+# Copyright (c) 2021 Sebastian Pipping <sebastian@pipping.org>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -39,6 +39,14 @@ cppcheck --version
 
 find --version | head -n1
 
+cppcheck_args=(
+    --quiet
+    --error-exitcode=1
+    --force
+    --suppress=objectIndex
+    --suppress=unknownMacro
+)
+
 find_args=(
     -type f \(
         -name \*.cpp
@@ -48,7 +56,7 @@ find_args=(
         -name xmltok_ns.c
         -o -name xmltok_impl.c
     \)
-    -exec cppcheck --quiet --error-exitcode=1 --force --suppress=objectIndex {} +
+    -exec cppcheck "${cppcheck_args[@]}" {} +
 )
 
 exec find "${find_args[@]}"
