@@ -5,7 +5,8 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2026 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2023      Joyce Brum <joycebrum@google.com>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -34,23 +35,58 @@ on:
   push:
   schedule:
     - cron: '0 2 * * 5'  # Every Friday at 2am
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   checks:
     name: Ensure well-formed and valid XML
-    runs-on: ubuntu-20.04
+    timeout-minutes: 15
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v2.4.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install build dependencies
+      env:
+        tidy_version: 5.8.0
       run: |-
-        sudo apt-get install --yes --no-install-recommends -V \
+        set -x
+        sudo timeout 10m apt-get update
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             docbook \
             libxml2-utils \
+            moreutils \
             w3c-sgml-lib
+
+        # NOTE: Ubuntu 24.04 has tidy 5.6.0 while we need more recent tidy 5.8.0
+        wget --progress=dot:giga "https://github.com/htacg/tidy-html5/releases/download/${tidy_version}/tidy-${tidy_version}-Linux-64bit.deb"
+        sudo timeout 10m apt-get install --yes "./tidy-${tidy_version}-Linux-64bit.deb"
+
+    - name: Enforce clean XML
+      run: |
+        set -x -o pipefail
+
+        # Re-format XHTML
+        ./expat/apply-htmltidy.sh
+
+        # Replace leading tabs by spaces
+        expand -i -t 2 expat/doc/xmlwf.xml | sponge expat/doc/xmlwf.xml
+
+        git -c color.ui=yes diff --exit-code  # i.e. show diff and fail CI if there is a diff
 
     - name: Ensure well-formed and valid XML
       run: |
         set -x
-        xmllint --noout --valid expat/doc/reference.html
-        xmllint --noout --valid expat/doc/xmlwf.xml
+
+        # Target offline validation rather than online (for robust CI)
+        sed 's,http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd,file:///usr/share/sgml/docbook/dtd/4.2/docbookx.dtd,' -i expat/doc/xmlwf.xml
+        sed 's,http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd,file:///usr/share/xml/w3c-sgml-lib/schema/dtd/REC-xhtml1-20020801/xhtml1-strict.dtd,' -i expat/doc/reference.html
+
+        # We're using unshare(1) to take internet access away forcefully
+        # so that we'll notice whenever our all-offline validation stops being all-offline
+        unshare --map-root-user --net -- xmllint --nonet --noout --valid expat/doc/reference.html
+        unshare --map-root-user --net -- xmllint --nonet --noout --valid expat/doc/xmlwf.xml

@@ -13,6 +13,8 @@
    Copyright (c) 2016-2017 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
    Copyright (c) 2017      Franek Korta <fkorta@gmail.com>
+   Copyright (c) 2022      Sean McBride <sean@rogue-research.com>
+   Copyright (c) 2025      Hanno Böck <hanno@gentoo.org>
    Licensed under the MIT license:
 
    Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -33,12 +35,15 @@
    DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
 */
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdint.h> // for SIZE_MAX
 #include <stdio.h>
 
 /* Functions close(2) and read(2) */
@@ -50,14 +55,14 @@
 #if defined(_MSC_VER)
 #  include <io.h>
 /* https://msdn.microsoft.com/en-us/library/wyssk1bs(v=vs.100).aspx */
-#  define _EXPAT_read _read
-#  define _EXPAT_read_count_t int
-#  define _EXPAT_read_req_t unsigned int
+#  define EXPAT_read _read
+#  define EXPAT_read_count_t int
+#  define EXPAT_read_req_t unsigned int
 #else /* POSIX */
-/* http://pubs.opengroup.org/onlinepubs/009695399/functions/read.html */
-#  define _EXPAT_read read
-#  define _EXPAT_read_count_t ssize_t
-#  define _EXPAT_read_req_t size_t
+/* https://pubs.opengroup.org/onlinepubs/009695399/functions/read.html */
+#  define EXPAT_read read
+#  define EXPAT_read_count_t ssize_t
+#  define EXPAT_read_req_t size_t
 #endif
 
 #ifndef S_ISREG
@@ -67,7 +72,7 @@
 #  ifndef S_IFMT
 #    define S_IFMT _S_IFMT
 #  endif
-#  define S_ISREG(m) (((m)&S_IFMT) == S_IFREG)
+#  define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #endif /* not S_ISREG */
 
 #ifndef O_BINARY
@@ -87,7 +92,7 @@ filemap(const tchar *name,
         void *arg) {
   size_t nbytes;
   int fd;
-  _EXPAT_read_count_t n;
+  EXPAT_read_count_t n;
   struct stat sb;
   void *p;
 
@@ -106,9 +111,9 @@ filemap(const tchar *name,
     close(fd);
     return 0;
   }
-  if (sb.st_size > XML_MAX_CHUNK_LEN) {
+  if (sb.st_size < 0 || (uint64_t)sb.st_size > SIZE_MAX) {
     close(fd);
-    return 2; /* Cannot be passed to XML_Parse in one go */
+    return 2; /* Cannot be passed to XML_Parse64 in one go */
   }
 
   nbytes = sb.st_size;
@@ -125,14 +130,14 @@ filemap(const tchar *name,
     close(fd);
     return 0;
   }
-  n = _EXPAT_read(fd, p, (_EXPAT_read_req_t)nbytes);
+  n = EXPAT_read(fd, p, (EXPAT_read_req_t)nbytes);
   if (n < 0) {
     tperror(name);
     free(p);
     close(fd);
     return 0;
   }
-  if (n != (_EXPAT_read_count_t)nbytes) {
+  if (n != (EXPAT_read_count_t)nbytes) {
     ftprintf(stderr, T("%s: read unexpected number of bytes\n"), name);
     free(p);
     close(fd);

@@ -13,8 +13,8 @@
    Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
    Copyright (c) 2001-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2004-2006 Karl Waclawek <karl@waclawek.net>
-   Copyright (c) 2005-2007 Steven Solie <ssolie@users.sourceforge.net>
-   Copyright (c) 2016-2019 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2005-2007 Steven Solie <steven@solie.ca>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
    Copyright (c) 2019      Zhongyuan Zhou <zhouzhongyuan@huawei.com>
    Licensed under the MIT license:
@@ -37,31 +37,28 @@
    DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
 */
 
+#include <inttypes.h> // PRIu64
 #include <stdio.h>
 #include <expat.h>
 
-#ifdef XML_LARGE_SIZE
-#  define XML_FMT_INT_MOD "ll"
-#else
-#  define XML_FMT_INT_MOD "l"
-#endif
-
 #ifdef XML_UNICODE_WCHAR_T
-#  include <wchar.h>
 #  define XML_FMT_STR "ls"
 #else
 #  define XML_FMT_STR "s"
 #endif
 
+#define BUFFER_SIZE (1024 * 32)
+
 static void XMLCALL
 startElement(void *userData, const XML_Char *name, const XML_Char **atts) {
-  int i;
-  int *depthPtr = (int *)userData;
+  size_t *const depthPtr = userData;
   (void)atts;
 
-  for (i = 0; i < *depthPtr; i++)
+  for (size_t i = 0; i < *depthPtr; i++)
     putchar('\t');
   printf("%" XML_FMT_STR "\n", name);
   *depthPtr += 1;
@@ -69,34 +66,53 @@ startElement(void *userData, const XML_Char *name, const XML_Char **atts) {
 
 static void XMLCALL
 endElement(void *userData, const XML_Char *name) {
-  int *depthPtr = (int *)userData;
+  size_t *const depthPtr = userData;
   (void)name;
 
   *depthPtr -= 1;
 }
 
 int
-main(int argc, char *argv[]) {
-  char buf[BUFSIZ];
+main(void) {
   XML_Parser parser = XML_ParserCreate(NULL);
-  int done;
-  int depth = 0;
-  (void)argc;
-  (void)argv;
+  XML_Bool done;
+  size_t depth = 0;
+
+  if (! parser) {
+    fprintf(stderr, "Couldn't allocate memory for parser\n");
+    return 1;
+  }
 
   XML_SetUserData(parser, &depth);
   XML_SetElementHandler(parser, startElement, endElement);
+
   do {
-    size_t len = fread(buf, 1, sizeof(buf), stdin);
-    done = len < sizeof(buf);
-    if (XML_Parse(parser, buf, (int)len, done) == XML_STATUS_ERROR) {
-      fprintf(stderr, "%" XML_FMT_STR " at line %" XML_FMT_INT_MOD "u\n",
-              XML_ErrorString(XML_GetErrorCode(parser)),
-              XML_GetCurrentLineNumber(parser));
+    void *const buf = XML_GetBuffer(parser, BUFFER_SIZE);
+    if (! buf) {
+      fprintf(stderr, "Couldn't allocate memory for buffer\n");
+      XML_ParserFree(parser);
+      return 1;
+    }
+
+    const size_t len = fread(buf, 1, BUFFER_SIZE, stdin);
+
+    if (ferror(stdin)) {
+      fprintf(stderr, "Read error\n");
+      XML_ParserFree(parser);
+      return 1;
+    }
+
+    done = feof(stdin) ? XML_TRUE : XML_FALSE;
+
+    if (XML_ParseBuffer64(parser, len, done) == XML_STATUS_ERROR) {
+      fprintf(stderr, "Parse error at line %" PRIu64 ":\n%" XML_FMT_STR "\n",
+              XML_GetCurrentLineNumber64(parser),
+              XML_ErrorString(XML_GetErrorCode(parser)));
       XML_ParserFree(parser);
       return 1;
     }
   } while (! done);
+
   XML_ParserFree(parser);
   return 0;
 }

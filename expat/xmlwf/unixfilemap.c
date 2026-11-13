@@ -10,8 +10,9 @@
    Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
    Copyright (c) 2001-2002 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2006      Karl Waclawek <karl@waclawek.net>
-   Copyright (c) 2016-2017 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2026      Matthew Fernandez <matthew.fernandez@gmail.com>
    Licensed under the MIT license:
 
    Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -32,7 +33,11 @@
    DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
 */
+
+#include "expat_config.h" // for off_t
 
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -40,7 +45,9 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
+#include <stdint.h> // for SIZE_MAX
 #include <stdio.h>
+#include <stdlib.h> // NULL
 #include <unistd.h>
 
 #ifndef MAP_FILE
@@ -80,9 +87,9 @@ filemap(const tchar *name,
     fprintf(stderr, "%" XML_FMT_STR ": not a regular file\n", name);
     return 0;
   }
-  if (sb.st_size > XML_MAX_CHUNK_LEN) {
+  if (sb.st_size < 0 || (uint64_t)sb.st_size > SIZE_MAX) {
     close(fd);
-    return 2; /* Cannot be passed to XML_Parse in one go */
+    return 2; /* Cannot be passed to XML_Parse64 in one go */
   }
 
   nbytes = sb.st_size;
@@ -93,15 +100,14 @@ filemap(const tchar *name,
     close(fd);
     return 1;
   }
-  p = (void *)mmap((void *)0, (size_t)nbytes, PROT_READ, MAP_FILE | MAP_PRIVATE,
-                   fd, (off_t)0);
-  if (p == (void *)-1) {
+  p = mmap(NULL, nbytes, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, (off_t)0);
+  if (p == MAP_FAILED) {
     tperror(name);
     close(fd);
     return 0;
   }
   processor(p, nbytes, name, arg);
-  munmap((void *)p, nbytes);
+  munmap(p, nbytes);
   close(fd);
   return 1;
 }
